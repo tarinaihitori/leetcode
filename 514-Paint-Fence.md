@@ -57,6 +57,27 @@ class Solution:
 DPには上記のようなアプローチの違いで分けることができるらしい。
 私のはボトムアップ的なアプローチらしい。
 
+メモ化再帰で書いたもの
+
+```python
+class Solution:
+    def num_ways(self, n: int, k: int) -> int:
+        if n == 0 or k == 0:
+            return 0
+        index_to_ways = {}
+        def count_ways(index):
+            if index in index_to_ways:
+                return index_to_ways[index]
+            if index == 1:
+                return k
+            if index == 2:
+                return k * k
+            index_to_ways[index] = (k-1) * (count_ways(index -1) + count_ways(index - 2))
+            return index_to_ways[index]
+        
+        return count_ways(n)
+```
+
 あと、この関数が2回呼ばれたときどうなるのかついて、
 同一インスタンス内の場合、self は同一なので、同じ n と k で呼び出したときにキャッシュヒットが発生し、計算が省略される。
 逆に異なるインスタンスならキャシュはクリアされるという認識。（間違っていたらコメントください）
@@ -68,28 +89,73 @@ DPには上記のようなアプローチの違いで分けることができる
 
 ```python
 
-from collections import OrderedDict
-from functools import wraps
+class Node:
+    def __init__(self, key=None, value=None, next=None, prev=None):
+        self.key = key
+        self.value = value
+        self.prev = prev
+        self.next = next
 
-def lru_cache(maxsize=128):
-    def decorator(func):
-        cache = OrderedDict()
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            key = args + tuple(sorted(kwargs.items()))
-            if key in cache:
-                cache.move_to_end(key)
-                return cache[key]
-            result = func(*args, **kwargs)
-            cache[key] = result
-            if len(cache) > maxsize:
-                cache.popitem(last=False)
+class LRU_Cache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.size = 0
+        self.cache = {}
+        self.sentinel = Node(1, 1)
+        self.sentinel.next = self.sentinel
+        self.sentinel.prev = self.sentinel
+
+    def get(self, key):
+        if key not in self.cache:
+            return None
+        node = self.cache[key]
+        self.remove(node.key)
+        self.insert_front(node.key, node.value)
+        return node.value
+
+    def remove(self, key):
+        node = self.cache[key]
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        del self.cache[key]
+        self.size -= 1
+
+    def insert_front(self, key, value):
+        node = Node(key, value)
+        next_node = self.sentinel.next
+        self.sentinel.next = node
+        node.prev = self.sentinel
+        node.next = next_node
+        next_node.prev = node
+        self.size += 1
+        self.cache[key] = node
+        if self.size > self.capacity:
+            last = self.sentinel.prev
+            self.remove(last.key)
+
+
+def lru_cache(maxsize=1):
+    def decorating_function(func):
+        nonlocal maxsize
+        if maxsize <= 0:
+            maxsize = 1
+        return _lru_cache_wrapper(func, maxsize)
+    return decorating_function
+
+
+def _lru_cache_wrapper(func, maxsize):
+    cache = LRU_Cache(maxsize)
+    def wrap(*args, **kwargs):
+        result = cache.get(args)
+        if result is not None:
             return result
-        return wrapper
-    return decorator
+        result = func(*args, **kwargs)
+        cache.insert_front(args, result)
+        return result
+    return wrap
 
 class Solution:
-    @lru_cache()
+    @lru_cache(maxsize=10000)
     def num_ways(self, n: int, k: int) -> int:
         if n == 0 or k ==0:
             return 0
